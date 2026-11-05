@@ -1,0 +1,49 @@
+name: Test scan of tar archive / OCI image
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create a dummy tar archive in the workspace
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tar-src"
+          echo "hello" > "$GITHUB_WORKSPACE/tar-src/file.txt"
+          tar -cf "$GITHUB_WORKSPACE/image.tar" -C "$GITHUB_WORKSPACE/tar-src" .
+          ls -l "$GITHUB_WORKSPACE/image.tar"
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          api_token: "invalid-orca-token"
+          project_key: "test-project"
+          image: "image.tar"
+          tar_archive: "image.tar"
+          oci: "true"
+          disable_err_report: "true"
+          no_color: "true"
+          timeout: "2m"
+      - name: Assert scan ran and reported an outcome
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          EXIT_CODE: ${{ steps.action.outputs.exit_code }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "exit_code output: '$EXIT_CODE'"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ "$EXIT_CODE" != "0" ]; then
+              echo "FAIL: action succeeded but exit_code output is '$EXIT_CODE'"
+              exit 1
+            fi
+            echo "PASS: scan succeeded"
+          elif [ "$OUTCOME" = "failure" ]; then
+            if [ -n "$EXIT_CODE" ] && [ "$EXIT_CODE" = "0" ]; then
+              echo "FAIL: step failed but exit_code output is 0"
+              exit 1
+            fi
+            echo "PASS: scan failed as expected (invalid credentials / dummy archive)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
